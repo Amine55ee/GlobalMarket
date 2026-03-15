@@ -178,25 +178,30 @@ function actualizarUIUsuario() {
 
 async function agregarAlCarrito(idProducto) {
     const usuarioLogueado = JSON.parse(localStorage.getItem('usuario'));
-
+    
     if (!usuarioLogueado) {
         alert("Debes iniciar sesión para añadir productos al carrito.");
         window.location.href = 'login.html';
         return;
     }
 
+    // Leer la cantidad del input (si existe, de lo contrario asume 1)
+    const inputCantidad = document.getElementById('prod-cantidad');
+    const cantidad = inputCantidad ? parseInt(inputCantidad.value) : 1;
+
     try {
         const respuesta = await fetch(`${API_URL}/carrito.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id_usuario: usuarioLogueado.id_usuario,
-                id_producto: idProducto
+            body: JSON.stringify({ 
+                id_usuario: usuarioLogueado.id_usuario, 
+                id_producto: idProducto,
+                cantidad: cantidad // Novedad: Enviar la cantidad a la API
             })
         });
-
+        
         if (respuesta.ok) {
-            alert("Producto añadido al carrito con éxito.");
+            alert(`Se han añadido ${cantidad} unidad(es) al carrito con éxito.`);
         } else {
             const data = await respuesta.json();
             alert("Error: " + data.mensaje);
@@ -226,7 +231,9 @@ async function cargarCarrito() {
             tabla.innerHTML = '<tr><td colspan="4" class="text-center">Tu carrito está vacío</td></tr>';
         } else {
             productosCarrito.forEach(prod => {
-                subtotal += parseFloat(prod.precio);
+                // Multiplicar el precio por la cantidad real del carrito
+                subtotal += parseFloat(prod.precio) * parseInt(prod.cantidad);
+                
                 tabla.innerHTML += `
                     <tr>
                         <td>
@@ -235,7 +242,7 @@ async function cargarCarrito() {
                                 <span>${prod.nombre}</span>
                             </div>
                         </td>
-                        <td><input type="number" class="form-control w-50" value="1" min="1" disabled></td>
+                        <td><input type="number" class="form-control w-50" value="${prod.cantidad}" min="1" disabled></td>
                         <td>${parseFloat(prod.precio).toFixed(2)} €</td>
                         <td><button class="btn btn-sm btn-outline-danger">X</button></td>
                     </tr>

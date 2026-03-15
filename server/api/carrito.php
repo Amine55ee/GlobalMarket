@@ -13,6 +13,7 @@ switch ($metodo) {
         $datos = json_decode(file_get_contents("php://input"));
         $id_usuario = $datos->id_usuario ?? null;
         $id_producto = $datos->id_producto ?? null;
+        $cantidad = $datos->cantidad ?? 1; // Novedad: Recibir la cantidad
 
         if (!$id_usuario || !$id_producto) {
             http_response_code(400);
@@ -23,14 +24,12 @@ switch ($metodo) {
         try {
             $pdo->beginTransaction();
 
-            // 1. Buscar si el usuario ya tiene un pedido "Pendiente" (que actúa como carrito)
             $stmt = $pdo->prepare("SELECT p.id_pedido FROM Pedido p JOIN Hace h ON p.id_pedido = h.id_pedido WHERE h.id_usuario = :user AND p.estado_pedido = 'Pendiente'");
             $stmt->execute([':user' => $id_usuario]);
             $pedido = $stmt->fetch();
 
             $id_pedido = $pedido ? $pedido['id_pedido'] : null;
 
-            // 2. Si no hay pedido pendiente, crear uno nuevo
             if (!$id_pedido) {
                 $stmt = $pdo->prepare("INSERT INTO Pedido (total, estado_pedido) VALUES (0, 'Pendiente')");
                 $stmt->execute();
@@ -40,10 +39,17 @@ switch ($metodo) {
                 $stmt->execute([':user' => $id_usuario, ':pedido' => $id_pedido]);
             }
 
-            // 3. Añadir el producto al detalle del pedido (carrito)
-            // Se asume cantidad 1.
-            $stmt = $pdo->prepare("INSERT IGNORE INTO Detalle_Pedido (id_pedido, id_producto) VALUES (:pedido, :producto)");
-            $stmt->execute([':pedido' => $id_pedido, ':producto' => $id_producto]);
+            // Insertar la cantidad recibida o sumarla a la existente
+            $sql_insert = "INSERT INTO Detalle_Pedido (id_pedido, id_producto, cantidad) 
+                           VALUES (:pedido, :producto, :cantidad) 
+                           ON DUPLICATE KEY UPDATE cantidad = cantidad + :cantidad_update";
+            $stmt = $pdo->prepare($sql_insert);
+            $stmt->execute([
+                ':pedido' => $id_pedido, 
+                ':producto' => $id_producto,
+                ':cantidad' => $cantidad,
+                ':cantidad_update' => $cantidad
+            ]);
 
             $pdo->commit();
             echo json_encode(["mensaje" => "Producto añadido al carrito", "id_pedido" => $id_pedido]);
@@ -64,8 +70,8 @@ switch ($metodo) {
             exit();
         }
 
-        // Obtener los productos del pedido pendiente del usuario
-        $sql = "SELECT prod.id_producto, prod.nombre, prod.precio 
+        // Obtener los productos del pedido pendiente del usuario y sus cantidades
+        $sql = "SELECT prod.id_producto, prod.nombre, prod.precio, dp.cantidad 
                 FROM Producto prod
                 JOIN Detalle_Pedido dp ON prod.id_producto = dp.id_producto
                 JOIN Pedido p ON dp.id_pedido = p.id_pedido
